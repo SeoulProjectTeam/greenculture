@@ -86,3 +86,58 @@
 - 실험 지표 확정: 시간, 탄소, 예측 정확도
 - 중간 점검 일정 고정(예: 3일 단위)
 
+## 11. 현재까지 진행사항(구현 현황)
+
+### 11-1. 리포지토리 구조
+- `backend/`: Spring Boot API 서버
+- `frontend/`: Expo 기반 React Native 앱(안드로이드 에뮬레이터 기준)
+- `docs/`: 기획/공유 문서
+- `docker-compose.yml`: 로컬 PostgreSQL 실행용
+
+### 11-2. 백엔드(완료/동작 확인)
+- 문화행사 추천 API
+  - `GET /api/events/recommend?date=YYYY-MM-DD&interest=카테고리`
+- 경로 비교/설명 API(현재는 샘플 데이터 기반)
+  - `POST /api/routes/compare`
+  - `POST /api/routes/{routeAlternativeId}/explain`
+- 따릉이 주변 대여소/반납 예측 API(현재는 샘플/목업 기반)
+  - `GET /api/bike-stations/nearby`
+  - `GET /api/bike-stations/{stationId}/return-availability`
+- 탄소 계산 API
+  - `POST /api/carbon/calculate`
+
+### 11-3. 문화행사 데이터 적재(OpenAPI 연동 완료)
+- 서울 열린데이터광장 `culturalEventInfo`(XML) 연동
+- 관리자 임포트 API 추가(수동 적재)
+  - `POST /api/admin/events/import?start=1&end=200`
+  - `POST /api/admin/events/import-range?pageSize=200&maxItems=1000`
+- 중복 방지: `cultcode`(HMPG_ADDR에서 추출) 기준으로 upsert
+- 환경변수로 키 주입
+  - `SEOUL_OPENAPI_KEY` (필수)
+
+### 11-4. 자동 갱신(스케줄러 추가)
+- 매일 지정된 시간에 OpenAPI 임포트를 자동 실행하도록 스케줄러 추가
+- 기본값은 안전하게 OFF
+  - `SEOUL_IMPORT_ENABLED=true`로 켜기
+  - `SEOUL_IMPORT_CRON`, `SEOUL_IMPORT_PAGE_SIZE`, `SEOUL_IMPORT_MAX_ITEMS`로 조정
+
+### 11-5. DB(PostgreSQL) 로컬 구성(완료)
+- Docker Compose로 로컬 Postgres 실행
+- Spring JPA(`ddl-auto=update`)로 테이블 자동 생성
+
+### 11-6. 프론트(완료/동작 확인)
+- Expo + TypeScript 앱 스캐폴드
+- 하단 탭 4개 화면
+  - 행사 / 경로 / 따릉이 / 탄소
+- 행사 화면 UI 개선
+  - 날짜: 달력(DatePicker) 선택
+  - 카테고리: 드롭다운(Picker) 선택
+- 안드로이드 에뮬레이터에서 백엔드 접근 기본값
+  - `http://10.0.2.2:8080`
+
+### 11-7. 로컬 실행 순서(요약)
+- Postgres 실행: `docker compose -p greenculture up -d postgres`
+- 백엔드 실행: `backend`에서 `.\gradlew.bat bootRun`
+- (선택) 행사 임포트: PowerShell에서 `Invoke-WebRequest -Method POST ".../api/admin/events/import?..."`
+- 프론트 실행: `frontend`에서 `npm run android`
+
