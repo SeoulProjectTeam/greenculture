@@ -22,4 +22,7 @@ public class CulturalEvent {
     private Double longitude;
     private LocalDate eventDate;
     private String sourceUrl;
+
+    @Column(unique = true)
+    private String externalId;
 }
