@@ -88,20 +88,41 @@
 
 ## 11. 현재까지 진행사항(구현 현황)
 
+> **범위 정리:** 위 섹션 4의 경로 3종 비교·따릉이 예측·탄소 시각화 등은 **비전/향후 확장**으로 두고, 지금 저장소의 실행 가능 MVP는 **문화행사 데이터 기반 코스 추천·다국어 UI·비회원 저장·위치 기반 묶음**까지입니다.
+
 ### 11-1. 리포지토리 구조 (정리 후)
-- `frontend/`: **Vite + React + TypeScript** 웹 MVP (문화행사 추천·UI, 서울시 Open API 연동)
-- `ai/`: 코스 생성 등 **LLM 교체 예정 로직** (`generateCourseWithAI` 목업 등)
-- `backend/`: 향후 REST/API 스캐폴드 (현재 코드 없음, README만)
-- `docs/`: 기획/공유 문서
+- `frontend/`: **Vite + React + TypeScript + Tailwind** 모바일형 웹 (`max-w-[430px]` 단일 컬럼)
+- `ai/`: 코스 변형 생성 진입점 — 규칙 기반 선택·목업 문구 (`generateCourseWithAI`), 향후 LLM 교체 예정
+- `backend/`: 서버/API 자리만 확보 (`README.md`, `package.json` 등 최소 파일 — 미연결)
+- `docs/`: 기획·팀 공유 문서
+- 루트 `.gitignore`: `node_modules`, `.env`, 로컬 빌드 산출물, 오탐 폴더(`seoul-culture-mvp/` 등) 제외
 
 ### 11-2. 예전 greenculture 스택
-- Spring Boot·Expo·Docker Postgres 조합은 **제거**함.
-- 아래 상위 섹션(1~10)의 경로·따릉이·탄소 등은 **향후 확장 아이디어**로 유지.
+- Spring Boot·Expo(RN)·Docker 등 기존 조합은 **제거**함.
+- 섹션 1~10 중 이동·따릉이·탄소·생성형 설명은 **로드맵**으로 유지.
 
 ### 11-3. 웹 MVP 실행 요약
-- 디렉터리: `frontend`
-- `npm install` 후 `npm run dev`
-- 환경 변수: `frontend/.env.example` (`VITE_SEOUL_API_KEY`, `VITE_USE_MOCK_DATA`)
-- 라우팅: `/`(랜딩) → `/search`(조건) → `/loading`(생성 연출) → `/results`(코스 카드) → `/course/:id`(상세)
-- 상태: `frontend/src/context/TripPlannerContext.tsx` 에 검색 조건·랭킹·코스 목록 유지
+- 디렉터리: `frontend` → `npm install` 후 `npm run dev`
+- 환경 변수 (`frontend/.env.example` 참고, 실제 값은 `frontend/.env`, Git 미추적):
+  - `VITE_SEOUL_API_KEY`: 서울시 OpenAPI 인증키 — 없거나 호출 실패 시 **mock 목록으로 폴백**
+  - `VITE_USE_MOCK_DATA=true`: **실제 API 호출 없이** 항상 mock만 사용 (CORS·키 없이 개발용)
+- 데이터 출처 구별: 브라우저 Network에서 `openapi.seoul.go.kr` 호출 여부, 또는 행사 `id`가 `mock-demo-*` 패턴인지로 확인 가능.
+
+### 11-4. 라우팅·네비게이션
+- 플로우: `/`(랜딩) → `/search`(방문일·자치구·관심사·언어·여행 길이) → `/loading`(생성 연출) → `/results`(코스 카드 목록) → `/course/:courseId`(타임라인 상세)
+- 추가: `/my-courses` — **localStorage**에 저장한 코스 목록(회원가입 없음)
+- 하단 탭: **Home** · **Explore**(`/search`) · **My Courses**(`/my-courses`)
+
+### 11-5. 구현된 주요 로직 (파일 기준)
+- 데이터 로드: `frontend/src/services/seoulCultureApi.ts` → `fetchCultureEvents` (live / mock 분기 및 폴백)
+- 추천·필터·점수: `frontend/src/utils/recommend.ts` (시간대·관심사·날짜·자치구 등)
+- 코스 후보 묶음: 동일·인접 자치구 우선 + 위경도 있을 때 **Haversine 직선거리**로 연속 구간 한도 (short 2km / half-day 4km / full-day 7km), 선택 로직은 `pickCourseEventsSpatial` 등 (코스 생성은 `ai/src/courseGenerator.ts`에서 해당 유틸 호출)
+- 거리 유틸: `frontend/src/utils/distance.ts`, 길찾기 API 교체용 스텁: `frontend/src/services/routeService.ts` (`getRouteInfo` → 현재 직선거리만)
+- 다국어 UI·행사 카드 현지화: `frontend/src/i18n/translations.ts`, `frontend/src/utils/localizeEvent.ts`
+- 비회원 저장: `frontend/src/utils/courseStorage.ts` (저장/삭제/중복 방지, 커스텀 이벤트로 동기화)
+- 전역 상태: `frontend/src/context/TripPlannerContext.tsx` (카탈로그 로딩, `prefs`, `ranked`, `courses`)
+
+### 11-6. 단기 다음 액션 (문서 10과 연계)
+- 공모전 스토리에 맞춰 **상위 비전(경로 비교·탄소)** 과 현재 MVP를 슬라이드에서 어떻게 연결할지 문구 합의
+- OpenAPI 실데이터 비중 확대 시 위경도 누락 행사에 대한 거리 규칙 완화 여부 검토
 
