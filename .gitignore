@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env*.local
+.DS_Store
+*.local
+
+# 실수로 생성된 중복 폴더 (내용 없음)
+seoul-culture-mvp/

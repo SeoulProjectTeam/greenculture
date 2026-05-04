@@ -1,0 +1,6 @@
+{
+  "name": "culture-backend",
+  "private": true,
+  "version": "0.0.0",
+  "description": "향후 API 서버 스캐폴드 — 코드 추가 시 이 디렉터리에서 관리"
+}
