@@ -41,13 +41,14 @@
 | 영역 | 내용 |
 |------|------|
 | 입력 | 방문일, 자치구(선택), 관심 태그, 표시 언어, 여행 길이(short / half-day / full-day) |
-| 데이터 | 서울시 OpenAPI `culturalEventInfo` JSON (**키 있음 + 성공 시**), 실패·미설정 시 **mock 폴백** |
+| 데이터 | 서울시 OpenAPI `culturalEventInfo` JSON을 **백엔드 프록시로 호출**(키는 서버 env). 실패·미설정 시 **mock 폴백** |
 | 추천·필터 | 날짜·시간대·관심사·점수 기반 랭킹 (`recommend.ts`) |
-| 코스 구성 | 동일·인접 **자치구 우선** + 위경도가 있으면 **Haversine 직선거리**로 연속 구간 한도 (2km / 4km / 7km) (`pickCourseEventsSpatial` 등) |
+| 코스 구성 | 동일·인접 **자치구 우선** + 위경도가 있으면 **Haversine 직선거리**로 연속 구간 한도 (2km / 4km / 7km) (`pickCourseEventsSpatial` 등) + (옵션) **Gemini LLM 코스 생성 시도 후 폴백** |
 | UI | 랜딩 → 검색 → 로딩 → 결과 카드 → **코스 상세 타임라인**; 하단 **Home / Explore / My Courses** |
 | 다국어 | UI 라벨·행사 카드 현지화 (`translations.ts`, `localizeEvent.ts`) |
 | 저장 | **localStorage** 코스 저장·삭제·중복 방지, 회원가입 없음 (`courseStorage.ts`) |
 | 거리 표시 | 상세 화면에서 **직선거리 참고**만 표기 (`distance.ts`, `routeService.ts` 스텁 — 지도 API 미연동) |
+| 안정성 | 실데이터 누락 대응(날짜/좌표/가격/이미지/URL/장소) + API 실패 시 mock 폴백 + Gemini 과부하(429/503) 재시도/모델 폴백 |
 
 ### 4-B. Phase 2+ — 로드맵 (아직 저장소에 없음)
 
@@ -114,6 +115,7 @@
 - 발표용 **한 줄 메시지:** “문화행사를 언어와 위치 기준으로 묶어 준다” + “다음은 실제 길찾기·탄소”.
 - Phase 1 **E2E 데모 시나리오** 확정(언어 전환·저장·mock/API 구별).
 - OpenAPI 실데이터 비중↑ 시 **좌표 누락 행사**에 대한 거리 규칙 완화 여부 검토.
+- (품질) 관광객에 부적합한 직업교육/취업성 프로그램 제거를 위한 **touristFitScore 필터** 적용(LLM 후보 선별 우선).
 - (로드맵) 경로 API 키·정책 정리 후 Phase 2 스코프 합의.
 
 ---
@@ -123,18 +125,21 @@
 ### 11-1. 디렉터리
 
 - `frontend/`: Vite + React + TypeScript + Tailwind, 모바일 폭 UI.
-- `ai/`: `generateCourseWithAI` 등 코스 생성 진입점(규칙 기반·목업).
-- `backend/`: 자리만 확보(미연결).
+- `ai/`: `generateCourseWithAI` 등 코스 생성 진입점(규칙 기반·목업 + (옵션) 서버 LLM 호출).
+- `backend/`: 서울시 OpenAPI 프록시 + (옵션) LLM 코스 생성 API.
 - `docs/`: 본 문서 등.
 
 ### 11-2. 실행
 
-- `cd frontend` → `npm install` → `npm run dev`
-- 환경 변수: `frontend/.env.example` 참고 (`VITE_SEOUL_API_KEY`, `VITE_USE_MOCK_DATA`)
+- (권장) 백엔드 먼저 실행: `cd backend` → `npm install` → `copy .env.example .env` → `npm run dev`
+- 프론트 실행: `cd frontend` → `npm install` → `copy .env.example .env` → `npm run dev`
+- 환경 변수:
+  - 프론트: `frontend/.env.example` 참고 (`VITE_USE_MOCK_DATA`, `VITE_BACKEND_BASE_URL`, `VITE_USE_LLM`)
+  - 백엔드: `backend/.env.example` 참고 (`SEOUL_API_KEY`, `LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL`)
 
 ### 11-3. mock vs 실API
 
-- Network에 `openapi.seoul.go.kr` 요청이 성공하면 라이브 데이터 경향.
+- Network에 `GET /api/events?...` 요청이 성공하면 라이브 데이터 경향(개발에선 Vite 프록시로 `5173/api/* → 3001` 전달).
 - 행사 `id`가 `mock-demo-*` 패턴이면 mock 목록.
 - 콘솔 경고 `live fetch failed, using mockCultureEvents` 는 폴백 발생.
 
@@ -145,13 +150,15 @@
 
 ### 11-5. 핵심 파일
 
-- `frontend/src/services/seoulCultureApi.ts` — 데이터 로드
-- `frontend/src/utils/recommend.ts` — 랭킹·`pickCourseEventsSpatial` 등
+- `backend/src/server.js` — `GET /api/events`, `POST /api/ai/course`
+- `frontend/src/services/seoulCultureApi.ts` — 데이터 로드(백엔드 프록시 호출 + 폴백)
+- `frontend/src/utils/recommend.ts` — 랭킹·`pickCourseEventsSpatial`·`touristFitScore` 등
 - `frontend/src/utils/distance.ts`, `frontend/src/services/routeService.ts`
 - `frontend/src/utils/localizeEvent.ts`, `frontend/src/i18n/translations.ts`
 - `frontend/src/utils/courseStorage.ts`
 - `frontend/src/context/TripPlannerContext.tsx`
-- `ai/src/courseGenerator.ts`
+- `ai/src/courseGenerator.ts` — (옵션) Gemini LLM 코스 생성 시도 + 후보 선별 + 폴백
+- `frontend/src/config/env.ts` — Vite env 주입 단일화(LLM 토글/백엔드 URL)
 
 ### 11-6. 예전 스택
 

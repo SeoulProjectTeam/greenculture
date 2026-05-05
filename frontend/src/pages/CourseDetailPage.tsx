@@ -6,6 +6,7 @@ import { useTripPlanner } from '../context/TripPlannerContext';
 import { getStraightLineKm } from '../services/routeService';
 import { localizeEvent, localizeRecommendationParagraph } from '../utils/localizeEvent';
 import { getSavedCourses, isCourseSaved, saveCourse } from '../utils/courseStorage';
+import { EventImage } from '../components/EventImage';
 
 function StraightLineBetweenVenues({
   prev,
@@ -152,6 +153,14 @@ export function CourseDetailPage() {
                 </div>
               ) : null}
               <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200 shadow-sm">
+                <EventImage
+                  src={it.event.imageUrl}
+                  alt={loc.title}
+                  className="aspect-[16/9] w-full rounded-xl object-cover ring-1 ring-slate-200"
+                />
+                {!it.event.imageUrl ? (
+                  <p className="mt-2 text-[11px] text-slate-500">{L.imageUnavailable}</p>
+                ) : null}
                 <p className="text-xs font-semibold text-seoul-blue">{loc.category}</p>
                 <h2 className="mt-1 text-base font-bold text-seoul-navy">{loc.title}</h2>
                 <p className="mt-1 text-xs text-slate-500">{loc.scheduleTimeLine}</p>

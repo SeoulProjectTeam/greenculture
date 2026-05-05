@@ -14,8 +14,14 @@ export function isDateWithinInclusive(visitIso: string, startIso: string, endIso
   const visit = parseISODate(visitIso);
   const start = parseISODate(startIso);
   const end = parseISODate(endIso);
-  if (!visit || !start || !end) return false;
-  return visit >= start && visit <= end;
+  if (!visit) return false;
+
+  // 날짜 정보가 불완전한 실데이터 대비:
+  // - start/end 중 하나라도 없으면 "알 수 없음"으로 간주하고 제외하지 않음(추천 로직이 깨지지 않게).
+  if (!start && !end) return true;
+  if (start && !end) return visit >= start;
+  if (!start && end) return visit <= end;
+  return visit >= start! && visit <= end!;
 }
 
 /** 불러온 행사 목록의 시작·종료일 문자열 최소·최대 (정렬용 yyyy-mm-dd 가정) */

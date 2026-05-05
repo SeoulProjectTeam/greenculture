@@ -186,6 +186,15 @@ export function localizeDistrictName(districtKo: string, lang: AppLanguage): str
 /** 향후 번역 API 연결 시 이 함수 본문만 교체 */
 export function translatePlaceName(placeKo: string, lang: AppLanguage, event?: CultureEvent): string {
   const key = placeKo.trim();
+  if (!key) {
+    const empty: Record<AppLanguage, string> = {
+      ko: '(장소 정보 없음)',
+      en: '(Location unavailable)',
+      ja: '(場所情報なし)',
+      zh: '(地点信息缺失)',
+    };
+    return empty[lang];
+  }
   if (lang === 'ko') return key;
   if (event) {
     if (lang === 'en' && event.placeEn?.trim()) return event.placeEn.trim();
@@ -231,8 +240,22 @@ export function formatLocalizedDate(isoDate: string, lang: AppLanguage): string 
 
 export function formatLocalizedPeriod(startIso: string, endIso: string, lang: AppLanguage): string {
   const u = uiLabels(lang);
-  const a = formatLocalizedDate(startIso, lang);
-  const b = formatLocalizedDate(endIso, lang);
+  const s = startIso.trim();
+  const e = endIso.trim();
+  if (!s && !e) {
+    const empty: Record<AppLanguage, string> = {
+      ko: '(기간 정보 없음)',
+      en: '(Dates unavailable)',
+      ja: '(期間情報なし)',
+      zh: '(日期信息缺失)',
+    };
+    return empty[lang];
+  }
+  // unknownTime은 "시간"용 라벨이라 기간에 재사용하면 어색할 수 있어 간단한 텍스트로 처리
+  if (s && !e) return `${formatLocalizedDate(s, lang)} ${u.periodSeparator} …`;
+  if (!s && e) return `… ${u.periodSeparator} ${formatLocalizedDate(e, lang)}`;
+  const a = formatLocalizedDate(s, lang);
+  const b = formatLocalizedDate(e, lang);
   return `${a} ${u.periodSeparator} ${b}`;
 }
 

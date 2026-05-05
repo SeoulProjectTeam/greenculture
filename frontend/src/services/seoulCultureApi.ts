@@ -1,7 +1,10 @@
 import { mockCultureEvents } from '../data/mockCultureEvents';
 import type { CultureEvent } from '../types/culture';
 
-const SEOUL_OPEN_API_HOST = 'http://openapi.seoul.go.kr:8088';
+function backendBaseUrl(): string {
+  const raw = (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? '';
+  return raw.trim().replace(/\/+$/, '');
+}
 
 function envFlag(name: string): boolean {
   const v = import.meta.env[name];
@@ -80,7 +83,8 @@ export function normalizeSeoulApiDate(input: unknown): string {
 function splitDateRange(dateField: unknown): { start: string; end: string } {
   const s = str(dateField);
   if (!s) return { start: '', end: '' };
-  const parts = s.split(/~|～|－|–|-/).map((x) => x.trim()).filter(Boolean);
+  // 하이픈(-)은 ISO 날짜(yyyy-mm-dd)에도 들어가므로 범위 구분자로 쓰지 않음.
+  const parts = s.split(/~|～|－|–/).map((x) => x.trim()).filter(Boolean);
   if (parts.length >= 2) {
     return {
       start: normalizeSeoulApiDate(parts[0]),
@@ -95,14 +99,23 @@ function parseCoordinate(v: unknown): number | undefined {
   const s = str(v);
   if (!s) return undefined;
   const n = Number.parseFloat(s.replace(/,/g, ''));
-  return Number.isFinite(n) ? n : undefined;
+  if (!Number.isFinite(n)) return undefined;
+  // 서울 근처 위경도 범위 sanity check. 범위를 벗어나면 좌표로 취급하지 않음.
+  if (n > 33 && n < 39) return n; // latitude 후보
+  if (n > 124 && n < 132) return n; // longitude 후보
+  return undefined;
 }
 
 function pickHomepage(raw: Record<string, unknown>): string | undefined {
   const keys = ['ORG_LINK', 'HMPG_ADDR', 'LINK_URL', 'URL', 'DETAIL_URL', 'INFO_URL'];
   for (const k of keys) {
     const v = str(raw[k]);
-    if (v) return v;
+    if (!v) continue;
+    const trimmed = v.trim();
+    // 스킴이 없으면 https 가정
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+    // 상대/기타는 그대로 두지 않고 버림(클릭 시 깨지는 케이스 방지)
   }
   return undefined;
 }
@@ -134,6 +147,24 @@ function inferIsFree(priceText: string | undefined, raw: Record<string, unknown>
   return false;
 }
 
+function normalizePriceText(priceText: string | undefined, isFree: boolean): string | undefined {
+  const p = str(priceText);
+  if (!p) return isFree ? '무료' : undefined;
+  const compact = p.replace(/\s/g, '');
+  // "문의/상이/미정" 류는 정보 없음 취급
+  if (/^문의$|^가격문의$|^상이$|티켓가격상이|가격미정/u.test(compact)) return isFree ? '무료' : undefined;
+  return p;
+}
+
+function normalizeImageUrl(v: unknown): string | undefined {
+  const s = str(v);
+  if (!s) return undefined;
+  const t = s.trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  if (t.startsWith('//')) return `https:${t}`;
+  return undefined;
+}
+
 function normalizeRows(row: unknown): Record<string, unknown>[] {
   if (row === null || row === undefined) return [];
   if (Array.isArray(row)) return row.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
@@ -150,9 +181,9 @@ function stableFallbackId(parts: string[], index: number): string {
 
 export function mapSeoulApiEventToCultureEvent(raw: Record<string, unknown>, index = 0): CultureEvent {
   const title = str(raw.TITLE) ?? str(raw.SUBJECT) ?? '(제목 없음)';
-  const category = str(raw.CODENAME) ?? str(raw.CATEGORY) ?? '';
+  const category = str(raw.CODENAME) ?? str(raw.CATEGORY) ?? '기타';
   const district = str(raw.GUNAME) ?? str(raw.AREA) ?? '';
-  const place = str(raw.PLACE) ?? str(raw.ADDR) ?? '';
+  const place = str(raw.PLACE) ?? str(raw.ADDR) ?? '(장소 정보 없음)';
 
   let startDate = normalizeSeoulApiDate(raw.STRTDATE ?? raw.START_DATE ?? raw.BEGIN_DATE);
   let endDate = normalizeSeoulApiDate(raw.END_DATE ?? raw.ENDDATE ?? raw.FINISH_DATE);
@@ -162,8 +193,9 @@ export function mapSeoulApiEventToCultureEvent(raw: Record<string, unknown>, ind
     if (!endDate) endDate = dr.end || dr.start;
   }
 
-  const price = str(raw.USE_FEE) ?? str(raw.FEE) ?? str(raw.PRICE);
-  const isFree = inferIsFree(price, raw);
+  const priceRaw = str(raw.USE_FEE) ?? str(raw.FEE) ?? str(raw.PRICE);
+  const isFree = inferIsFree(priceRaw, raw);
+  const price = normalizePriceText(priceRaw, isFree);
 
   const description =
     str(raw.PROGRAM) ??
@@ -185,10 +217,13 @@ export function mapSeoulApiEventToCultureEvent(raw: Record<string, unknown>, ind
     str(raw.OPTIME);
 
   const homepageUrl = pickHomepage(raw);
-  const imageUrl = str(raw.MAIN_IMG) ?? str(raw.IMG_URL) ?? str(raw.FILE_URL);
+  const imageUrl = normalizeImageUrl(raw.MAIN_IMG) ?? normalizeImageUrl(raw.IMG_URL) ?? normalizeImageUrl(raw.FILE_URL);
 
-  const latitude = parseCoordinate(raw.LAT ?? raw.GPSY ?? raw.Y_COORD ?? raw.WGSY);
-  const longitude = parseCoordinate(raw.LOT ?? raw.LNG ?? raw.GPSX ?? raw.X_COORD ?? raw.WGSX);
+  // 일부 레코드는 LAT/LNG가 뒤바뀌거나 범위 밖으로 들어오는 케이스가 있어 sanity 체크를 통과한 값만 사용
+  const latCand = parseCoordinate(raw.LAT ?? raw.GPSY ?? raw.Y_COORD ?? raw.WGSY);
+  const lonCand = parseCoordinate(raw.LOT ?? raw.LNG ?? raw.GPSX ?? raw.X_COORD ?? raw.WGSX);
+  const latitude = latCand && latCand > 33 && latCand < 39 ? latCand : undefined;
+  const longitude = lonCand && lonCand > 124 && lonCand < 132 ? lonCand : undefined;
 
   const serial =
     str(raw.LIST_SERIAL_NO) ??
@@ -223,9 +258,13 @@ export function mapSeoulApiEventToCultureEvent(raw: Record<string, unknown>, ind
   };
 }
 
-function buildRequestUrl(key: string, startIndex: number, endIndex: number): string {
-  const safeKey = encodeURIComponent(key);
-  return `${SEOUL_OPEN_API_HOST}/${safeKey}/json/culturalEventInfo/${startIndex}/${endIndex}/`;
+function buildRequestUrl(startIndex: number, endIndex: number): string {
+  const base = backendBaseUrl();
+  const qs = new URLSearchParams({
+    start: String(startIndex),
+    end: String(endIndex),
+  });
+  return `${base}/api/events?${qs.toString()}`;
 }
 
 async function fetchLiveCultureEvents(
@@ -233,10 +272,7 @@ async function fetchLiveCultureEvents(
   endIndex: number,
   signal?: AbortSignal,
 ): Promise<CultureEvent[]> {
-  const key = str(import.meta.env.VITE_SEOUL_API_KEY);
-  if (!key) throw new Error('VITE_SEOUL_API_KEY 가 설정되지 않았습니다.');
-
-  const url = buildRequestUrl(key, startIndex, endIndex);
+  const url = buildRequestUrl(startIndex, endIndex);
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 

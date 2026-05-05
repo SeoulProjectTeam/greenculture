@@ -58,6 +58,7 @@ export const detailUi = {
     straightLineOnly: 'Straight line only — not walking or transit time',
     nearbyByLocationNoCoords:
       'Nearby by location — straight-line distance not shown (coordinates missing for one or both venues).',
+    imageUnavailable: 'No image available for this event.',
   },
   ko: {
     timeline: '타임라인',
@@ -115,6 +116,7 @@ export const detailUi = {
     straightLineOnly: '직선 거리만 표시 · 도보·대중교통 시간 아님',
     nearbyByLocationNoCoords:
       '위치상 가까운 후보입니다. 한쪽 또는 양쪽 행사에 좌표가 없어 직선 거리는 표시하지 않습니다.',
+    imageUnavailable: '이미지 정보가 없습니다.',
   },
   ja: {
     timeline: 'タイムライン',
@@ -172,6 +174,7 @@ export const detailUi = {
     straightLineOnly: '直線距離のみ・徒歩・交通の所要時間ではありません',
     nearbyByLocationNoCoords:
       'エリア上は近い組み合わせです。座標がないため直線距離は表示しません。',
+    imageUnavailable: '画像がありません。',
   },
   zh: {
     timeline: '行程',
@@ -228,6 +231,7 @@ export const detailUi = {
     straightLineOnly: '仅为直线距离 — 非步行或公共交通耗时',
     nearbyByLocationNoCoords:
       '按区域相近组合。缺少坐标，无法显示直线距离。',
+    imageUnavailable: '暂无图片。',
   },
 } as const satisfies Record<AppLanguage, Record<string, string>>;
 

@@ -131,9 +131,10 @@ function describeInterestMatches(event: CultureEvent, interests: InterestId[]): 
 
 function scoreDistrictProximity(event: CultureEvent, userDistrict: string): { score: number; reason?: string } {
   if (!userDistrict) return { score: 6, reason: '자치구 조건 없음 — 동등 배점' };
-  if (event.district === userDistrict) return { score: 28, reason: `선택한 자치구(${userDistrict})와 동일` };
-  if (areDistrictsClose(userDistrict, event.district))
-    return { score: 16, reason: `선택 구역과 인접 자치구(${event.district})` };
+  const ev = (event.district ?? '').trim();
+  if (!ev) return { score: 2, reason: '자치구 정보 없음 — 거리/구역 가중치 축소' };
+  if (ev === userDistrict) return { score: 28, reason: `선택한 자치구(${userDistrict})와 동일` };
+  if (areDistrictsClose(userDistrict, ev)) return { score: 16, reason: `선택 구역과 인접 자치구(${ev})` };
   return { score: 4, reason: '다른 자치구지만 일정·관심사와 궁합 가능' };
 }
 
@@ -208,6 +209,90 @@ export function calculateForeignerFriendlinessScore(event: CultureEvent): number
   else if (desc.length >= 45) raw += 10;
   if (LOW_BARRIER_CATEGORIES.has(event.category)) raw += 22;
   return Math.min(100, Math.round(raw));
+}
+
+export const TOURIST_PENALTY_KEYWORDS = [
+  '직업교육',
+  '인력개발센터',
+  '실무',
+  '수강생 모집',
+  '교육생',
+  '자격증',
+  '취업',
+  '창업',
+  '채용',
+  '과정',
+  '강사양성',
+] as const;
+
+export const TOURIST_BONUS_KEYWORDS = [
+  '축제',
+  '전시',
+  '공연',
+  '체험',
+  '투어',
+  '박물관',
+  '미술관',
+  '궁',
+  '문화재',
+  '거리',
+  '마켓',
+  '페스티벌',
+] as const;
+
+export type TouristFitSignals = {
+  score: number;
+  penalized: string[];
+  bonus: string[];
+  excluded: boolean;
+};
+
+/**
+ * 관광객 적합도(0~100) — 직업교육/취업성 프로그램을 후보에서 최대한 배제하기 위한 점수.
+ * - excluded=true 이면 "가능하면 후보에서 제외" 대상으로 취급
+ */
+export function touristFitScore(event: CultureEvent): TouristFitSignals {
+  const title = (event.title ?? '').trim();
+  const desc = (event.description ?? '').trim();
+  const place = (event.place ?? '').trim();
+  const org = (event.organization ?? '').trim();
+  const blob = `${title} ${desc} ${place} ${org}`.toLowerCase();
+
+  const penalized: string[] = [];
+  const bonus: string[] = [];
+
+  for (const kw of TOURIST_PENALTY_KEYWORDS) {
+    if (blob.includes(String(kw).toLowerCase())) penalized.push(String(kw));
+  }
+  for (const kw of TOURIST_BONUS_KEYWORDS) {
+    if (blob.includes(String(kw).toLowerCase())) bonus.push(String(kw));
+  }
+
+  // base는 50에서 시작
+  let score = 50;
+
+  // 직업교육/취업성 키워드는 강한 감점
+  score -= penalized.length * 18;
+
+  // 관광 키워드는 가점
+  score += bonus.length * 8;
+
+  // 너무 일반적인 "과정"은 오탐이 있을 수 있어, 단독으로만 걸리면 감점 완화
+  if (penalized.length === 1 && penalized[0] === '과정') score += 10;
+
+  // 설명/홈페이지/무료 여부도 약간 가점(관광객 정보 접근성)
+  if (desc.length >= 60) score += 6;
+  if ((event.homepageUrl ?? '').trim().length > 0) score += 4;
+  if (isEffectivelyFree(event)) score += 4;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  // 제외 기준: 강한 취업/교육성 키워드가 2개 이상이거나, 취업/채용/자격증이 포함될 때
+  const hard = new Set(['취업', '채용', '자격증', '직업교육', '강사양성', '수강생 모집', '교육생']);
+  const hardHits = penalized.filter((k) => hard.has(k));
+  const excluded = hardHits.length >= 1 && penalized.length >= 2 ? true : hardHits.length >= 2;
+
+  return { score, penalized, bonus, excluded };
 }
 
 export function summarizeDescription(event: CultureEvent, lang: AppLanguage, maxLen = 120): string {

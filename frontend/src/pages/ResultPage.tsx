@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { formatResultsSubtitle, uiLabels } from '../i18n/translations';
 import { useTripPlanner } from '../context/TripPlannerContext';
 import { localizeDistrictName } from '../utils/localizeEvent';
+import { EventImage } from '../components/EventImage';
 
 export function ResultPage() {
   const { courses, prefs, ranked } = useTripPlanner();
@@ -54,6 +55,16 @@ export function ResultPage() {
               key={course.id}
               className="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200 shadow-card"
             >
+              <div className="px-4 pt-4">
+                <EventImage
+                  src={course.items[0]?.event.imageUrl}
+                  alt={`${course.title} preview`}
+                  className="aspect-[16/9] w-full rounded-2xl object-cover ring-1 ring-slate-200"
+                />
+                {!course.items[0]?.event.imageUrl ? (
+                  <p className="mt-2 text-[11px] text-slate-500">{L.imageUnavailable}</p>
+                ) : null}
+              </div>
               <div className="bg-gradient-to-r from-seoul-sky/90 to-white px-4 py-3">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-seoul-blue">
                   {L.curatedRoute}

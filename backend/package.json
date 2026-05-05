@@ -2,5 +2,15 @@
   "name": "culture-backend",
   "private": true,
   "version": "0.0.0",
-  "description": "향후 API 서버 스캐폴드 — 코드 추가 시 이 디렉터리에서 관리"
+  "description": "서울시 OpenAPI 프록시 백엔드 (Express)",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0"
+  }
 }
