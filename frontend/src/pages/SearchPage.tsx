@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppLanguage, InterestId, TravelDurationId, UserPreferences } from '../types/culture';
 import { useTripPlanner } from '../context/TripPlannerContext';
+import { uiLabels } from '../i18n/translations';
+import { interestUiLabel } from '../utils/courseSummary';
 
 const DISTRICTS = [
   '',
@@ -17,14 +19,14 @@ const DISTRICTS = [
   '송파구',
 ] as const;
 
-const INTERESTS: { id: InterestId; label: string }[] = [
-  { id: 'exhibition', label: 'Exhibition' },
-  { id: 'performance', label: 'Performance' },
-  { id: 'festival', label: 'Festival' },
-  { id: 'traditional', label: 'Traditional' },
-  { id: 'kpop', label: 'K-pop' },
-  { id: 'experience', label: 'Hands-on' },
-  { id: 'free', label: 'Free events' },
+const INTEREST_IDS: InterestId[] = [
+  'exhibition',
+  'performance',
+  'festival',
+  'traditional',
+  'kpop',
+  'experience',
+  'free',
 ];
 
 const DURATION: { id: TravelDurationId; label: string; hint: string }[] = [
@@ -50,10 +52,18 @@ export function SearchPage() {
   const [travelDuration, setTravelDuration] = useState<TravelDurationId>(prefs?.travelDuration ?? 'half-day');
   const [interests, setInterests] = useState<InterestId[]>(prefs?.interests ?? ['exhibition', 'festival']);
   const [language, setLanguage] = useState<AppLanguage>(prefs?.language ?? 'en');
+  const [includeRestaurantSuggestions, setIncludeRestaurantSuggestions] = useState(
+    prefs?.includeRestaurantSuggestions ?? false,
+  );
+
+  const SL = uiLabels(language);
 
   const toggleInterest = (id: InterestId) => {
     setInterests((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
+
+  /** 빈 배열 = 관심 전체(필터 비적용, recommend.ts와 동일) */
+  const interestsAllMode = interests.length === 0;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +73,7 @@ export function SearchPage() {
       travelDuration,
       interests,
       language,
+      includeRestaurantSuggestions,
     };
     setPrefs(next);
     navigate('/loading');
@@ -129,18 +140,29 @@ export function SearchPage() {
         <div>
           <p className="text-sm font-semibold text-slate-800">Interests</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            {INTERESTS.map((it) => (
+            <button
+              type="button"
+              onClick={() => setInterests([])}
+              className={`rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
+                interestsAllMode
+                  ? 'bg-seoul-mint text-white ring-seoul-mint'
+                  : 'bg-slate-50 text-slate-700 ring-slate-200'
+              }`}
+            >
+              {SL.prefInterestAll}
+            </button>
+            {INTEREST_IDS.map((id) => (
               <button
-                key={it.id}
+                key={id}
                 type="button"
-                onClick={() => toggleInterest(it.id)}
+                onClick={() => toggleInterest(id)}
                 className={`rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
-                  interests.includes(it.id)
+                  !interestsAllMode && interests.includes(id)
                     ? 'bg-seoul-mint text-white ring-seoul-mint'
                     : 'bg-slate-50 text-slate-700 ring-slate-200'
                 }`}
               >
-                {it.label}
+                {interestUiLabel(language, id)}
               </button>
             ))}
           </div>
@@ -159,6 +181,16 @@ export function SearchPage() {
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 ring-seoul-blue/10 hover:bg-slate-50/80">
+          <input
+            type="checkbox"
+            checked={includeRestaurantSuggestions}
+            onChange={(ev) => setIncludeRestaurantSuggestions(ev.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-seoul-blue focus:ring-seoul-blue"
+          />
+          <span className="text-sm font-semibold leading-snug text-slate-800">{SL.prefIncludeRestaurants}</span>
         </label>
 
         <button

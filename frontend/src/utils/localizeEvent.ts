@@ -61,10 +61,10 @@ const DISTRICT_MAP: Record<string, Record<AppLanguage, string>> = {
 /** recommend.ts 에서 생성되는 한글 추천 사유 → 표시용 문장 */
 const REASON_MAP: Record<string, Record<AppLanguage, string>> = {
   '관심사 미선택 — 다양한 후보를 폭넓게 고려': {
-    ko: '관심사 미선택 — 다양한 후보를 폭넓게 고려',
-    en: 'No interests selected — we looked broadly across good matches.',
-    ja: '関心カテゴリ未選択のため、幅広い候補から提案しています。',
-    zh: '未选择兴趣偏好，因此在较广范围内为您筛选。',
+    ko: '관심사를 선택하지 않아 다양한 문화행사 후보를 폭넓게 추천했습니다.',
+    en: 'You did not select interests, so we considered a broad set of cultural events.',
+    ja: '関心カテゴリが未選択のため、幅広い文化イベント候補からおすすめしています。',
+    zh: '您未选择兴趣偏好，因此我们在更广范围内为您挑选文化活动候选。',
   },
   '전시·미술 키워드와 맞음': {
     ko: '전시·미술 키워드와 맞음',
@@ -115,10 +115,10 @@ const REASON_MAP: Record<string, Record<AppLanguage, string>> = {
     zh: '您的到访日在官方活动期内。',
   },
   '자치구 조건 없음 — 동등 배점': {
-    ko: '자치구 조건 없음 — 동등 배점',
-    en: 'No district filter — districts weighted evenly.',
-    ja: '区の指定なし — 公平にスコアしています。',
-    zh: '未限定行政区 — 各区权重相同。',
+    ko: '지역 제한 없이 다양한 후보를 검토했습니다.',
+    en: 'No district was specified, so we reviewed options across Seoul.',
+    ja: 'エリア指定がないため、ソウル全域の候補から検討しました。',
+    zh: '未限定行政区，因此我们在首尔全域范围内筛选候选。',
   },
   '다른 자치구지만 일정·관심사와 궁합 가능': {
     ko: '다른 자치구지만 일정·관심사와 궁합 가능',
@@ -133,28 +133,28 @@ const REASON_MAP: Record<string, Record<AppLanguage, string>> = {
     zh: '符合您对免费活动的偏好。',
   },
   '소개 글이 길어 외국인 안내에 유리': {
-    ko: '소개 글이 길어 외국인 안내에 유리',
-    en: 'Longer description — usually easier for visitors to plan.',
-    ja: '紹介文が充実しており、事前情報が取りやすいです。',
-    zh: '介绍文字较完整，便于行前了解。',
+    ko: '행사 설명과 장소 정보가 충분해 방문 전 정보를 확인하기 쉽습니다.',
+    en: 'The event description and location info are detailed, making it easier to check before visiting.',
+    ja: '説明文と場所情報が比較的充実しており、訪問前に確認しやすいです。',
+    zh: '活动说明与地点信息较完整，便于在出行前确认细节。',
   },
   '소개 정보가 비교적 충실함': {
-    ko: '소개 정보가 비교적 충실함',
-    en: 'Fair amount of program info available.',
-    ja: '情報量はそこそこあります。',
-    zh: '有一定的官方介绍信息。',
+    ko: '행사 정보가 비교적 잘 정리되어 있어 일정에 반영하기 좋습니다.',
+    en: 'The event information is fairly complete, which helps planning.',
+    ja: 'イベント情報が比較的まとまっており、計画に組み込みやすいです。',
+    zh: '活动信息相对完整，便于纳入行程规划。',
   },
   '간단한 안내 수준': {
-    ko: '간단한 안내 수준',
-    en: 'Only brief official notes — check the website for details.',
-    ja: '案内は簡素です。詳細は公式サイトをご確認ください。',
-    zh: '简介较少，详情请查看官网。',
+    ko: '상세 안내는 공식 웹사이트에서 확인하는 것이 좋습니다.',
+    en: 'For full details, please check the official website.',
+    ja: '詳細は公式サイトで確認するのがおすすめです。',
+    zh: '更详细的信息建议查看官方网站。',
   },
   '추천 점수 상위': {
-    ko: '추천 점수 상위',
-    en: 'High recommendation score among candidates.',
-    ja: '候補の中でスコアが高いプログラムです。',
-    zh: '在候选活动中得分较高。',
+    ko: '여러 후보 중 조건에 더 잘 맞는 행사로 우선 추천했습니다.',
+    en: 'This was prioritized because it matches your conditions better among candidates.',
+    ja: '複数候補の中で条件により合うものとして優先しました。',
+    zh: '在多个候选中，它与您的条件更契合，因此优先推荐。',
   },
 };
 
@@ -394,20 +394,17 @@ export function translateReasonPhrase(koReason: string, lang: AppLanguage): stri
 export function localizeRecommendationParagraph(detail: CourseEventDetail, lang: AppLanguage): string {
   const reasons = detail.recommendationReasons ?? [];
   const parts = reasons.map((r) => translateReasonPhrase(r, lang));
-  const unique = [...new Set(parts)];
-  if (lang === 'en') {
-    const body =
-      unique.join(' ') ||
-      'It fits your plan and is straightforward to follow without Korean language skills.';
-    return `${body} It is easy to enjoy even if you do not read Korean.`;
-  }
-  if (lang === 'ja') {
-    return unique.join(' ') || 'ご希望の条件に合わせやすいプログラムです。';
-  }
-  if (lang === 'zh') {
-    return unique.join(' ') || '符合您的行程与偏好，便于当日安排。';
-  }
-  return unique.join(' ') || '코스 흐름과 방문 조건에 잘 맞습니다.';
+  const unique = [...new Set(parts.map((s) => s.trim()).filter(Boolean))].slice(0, 4);
+
+  const fallback: Record<AppLanguage, string> = {
+    ko: '선택한 조건을 바탕으로 코스 흐름에 어울리는 행사를 골랐습니다.',
+    en: 'Selected to fit your plan and course flow based on your inputs.',
+    ja: '選択条件に基づき、コースの流れに合うイベントを選びました。',
+    zh: '根据您的条件，选择了更适合路线安排的活动。',
+  };
+
+  const lines = unique.length > 0 ? unique : [fallback[lang]];
+  return lines.map((s) => `• ${s}`).join('\n');
 }
 
 export function localizeScheduleSlotTime(

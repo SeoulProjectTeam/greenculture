@@ -6,7 +6,9 @@ import type {
   UserPreferences,
 } from '../../frontend/src/types/culture';
 import { getFrontendEnv } from '../../frontend/src/config/env';
-import { localizeDistrictName, translateCategory } from '../../frontend/src/utils/localizeEvent';
+import { formatUiTemplate, uiLabels } from '../../frontend/src/i18n/translations';
+import { localizeDistrictName } from '../../frontend/src/utils/localizeEvent';
+import { generateCourseSummary } from '../../frontend/src/utils/courseSummary';
 import {
   calculateForeignerFriendlinessScore,
   calculateRecommendationScore,
@@ -16,6 +18,15 @@ import {
   sortRankedForCourseConstruction,
   touristFitScore,
 } from '../../frontend/src/utils/recommend';
+
+function buildCourseTitle(lang: AppLanguage, count: number, district: string): string {
+  const dRaw = district.trim();
+  const d =
+    dRaw.length > 0 ? localizeDistrictName(dRaw, lang) : lang === 'ko' ? '서울' : 'Seoul';
+  const L = uiLabels(lang);
+  if (count <= 1) return formatUiTemplate(L.courseTitleSingleSpot, { district: d });
+  return formatUiTemplate(L.courseTitleMultiSpot, { district: d, count });
+}
 
 /**
  * 향후 OpenAI 등 LLM으로 교체하기 위한 진입점.
@@ -123,10 +134,9 @@ async function tryGenerateWithServerLLM(
     if (!res.ok) return null;
     const json: any = await res.json();
 
-    const title = typeof json?.title === 'string' ? json.title : '';
-    const summary = typeof json?.summary === 'string' ? json.summary : '';
+    const llmTitle = typeof json?.title === 'string' ? json.title.trim() : '';
     const spots = Array.isArray(json?.spots) ? json.spots : [];
-    if (!title || !summary || spots.length === 0) return null;
+    if (spots.length === 0) return null;
 
     const byId = new Map(rankedSpatial.map((s) => [s.event.id, s] as const));
     const ordered = spots
@@ -155,7 +165,7 @@ async function tryGenerateWithServerLLM(
 
     if (itemsPicked.length === 0) return null;
 
-    const schedule = itemsPicked.map((it, idx) => ({
+    const schedule = itemsPicked.map((it: any, idx: number) => ({
       order: idx + 1,
       timeLabel: formatTimeLabel(it.event.eventTime, idx),
       place: it.event.place,
@@ -166,10 +176,22 @@ async function tryGenerateWithServerLLM(
       homepageUrl: it.event.homepageUrl ?? '',
     }));
 
+    const tagline = generateCourseSummary(
+      prefs.language,
+      itemsPicked.map((i: any) => i.event),
+      prefs.interests,
+    );
+
+    const titleResolved =
+      itemsPicked.length === 1
+        ? buildCourseTitle(prefs.language, 1, itemsPicked[0]!.event.district)
+        : llmTitle ||
+          buildCourseTitle(prefs.language, itemsPicked.length, itemsPicked[0]!.event.district);
+
     return {
-      id: `course-llm-${prefs.visitDate}-${itemsPicked.map((i) => i.event.id).join('|').slice(0, 24)}`,
-      title,
-      tagline: summary,
+      id: `course-llm-${prefs.visitDate}-${itemsPicked.map((i: any) => i.event.id).join('|').slice(0, 24)}`,
+      title: titleResolved,
+      tagline,
       schedule,
       items: itemsPicked,
     };
@@ -233,8 +255,12 @@ function generateRuleBasedCourse(prefs: UserPreferences, picked: ScoredEvent[]):
     recommendationReason: buildEventRecommendationBlurb(s, prefs.language),
   }));
 
-  const title = mockCourseTitle(prefs.language, items.length, items[0]!.event.district);
-  const tagline = mockCourseTagline(prefs.language, items);
+  const title = buildCourseTitle(prefs.language, items.length, items[0]!.event.district);
+  const tagline = generateCourseSummary(
+    prefs.language,
+    items.map((i) => i.event),
+    prefs.interests,
+  );
 
   const schedule = items.map((it, idx) => ({
     order: idx + 1,
@@ -286,30 +312,6 @@ function buildEventRecommendationBlurb(s: ScoredEvent, lang: AppLanguage): strin
     zh: (t) => `${t} — 符合您的偏好且便于当日行程安排。`,
   };
   return templates[lang](top);
-}
-
-function mockCourseTitle(lang: AppLanguage, count: number, district: string): string {
-  const dRaw = district.trim();
-  const d =
-    dRaw.length > 0 ? localizeDistrictName(dRaw, lang) : lang === 'ko' ? '서울' : 'Seoul';
-  const map: Record<AppLanguage, string> = {
-    ko: `${d} 중심 문화 코스 (${count}스팟)`,
-    en: `${d} culture loop · ${count} highlights`,
-    ja: `${d}エリア・文化ミニコース（${count}か所）`,
-    zh: `${d}文化微路线 · ${count}个精选点`,
-  };
-  return map[lang];
-}
-
-function mockCourseTagline(lang: AppLanguage, items: ScoredEvent[]): string {
-  const cats = [...new Set(items.map((i) => translateCategory(i.event.category, lang)))].join(' · ');
-  const map: Record<AppLanguage, string> = {
-    ko: `${cats}를 한 번에 즐기는 밝고 편한 동선입니다. 실제 연동 시에는 AI가 이동·혼잡도까지 고려합니다.`,
-    en: `A bright, walkable mix of ${cats}. Later: AI can add transit tuning and crowd-aware swaps.`,
-    ja: `${cats}を一度に楽しめるコンパクトな動線です（将来：交通・混雑も反映予定）。`,
-    zh: `串联「${cats}」的轻松半日/一日游路线（后续可接入交通与客流优化）。`,
-  };
-  return map[lang];
 }
 
 /** 코스가 바뀌어도 점수 테이블을 재사용할 수 있도록 노출 */

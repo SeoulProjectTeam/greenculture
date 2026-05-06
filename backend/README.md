@@ -22,6 +22,14 @@ npm run dev
 - **키 관리**: `SEOUL_API_KEY`는 **백엔드 환경변수**에서만 읽습니다.
 - **정규화(최소)**: 응답의 `culturalEventInfo.row`가 객체로 올 경우 배열로 감싸 반환합니다(프론트 매핑 안정화 목적).
 
+### `POST /api/seoul/nearby-food-cert`
+
+- **역할**: 서울시 열린데이터 **식품인증업소 관리** OpenAPI(`FsaCrtfcUpsoMgtNew`)를 호출해 목록을 캐시한 뒤, 요청 본문의 행사 좌표 기준 **Haversine 직선 거리**로 가까운 순 후보를 고릅니다.
+- **본문**: `{ "events": [{ "district", "latitude", "longitude" }], "travelDuration": "short" | "half-day" | "full-day" }`
+- **설정**: **`SEOUL_API_KEY`** 필수 — 문화행사(`/api/events`)와 **동일한** 서울시 OpenAPI 인증키를 사용합니다(식품 전용 별도 키 변수 없음). 서비스명 기본값은 **`FsaCrtfcUpsoMgtNew`** (열린데이터광장 식품인증업소 관리 OpenAPI). 공식 샘플 URL은 `http://openapi.seoul.go.kr:8088/(인증키)/xml/FsaCrtfcUpsoMgtNew/1/5/` 형태이며, 이 서버는 동일 서비스를 **`http://openapi.seoul.go.kr:8088/(키)/json/FsaCrtfcUpsoMgtNew/start/end/`** 로 호출합니다. 다른 데이터셋으로 바꿀 때만 `SEOUL_FOOD_CERT_SERVICE`를 지정합니다.
+- **좌표**: 위경도 필드가 있으면 우선 사용합니다. EPSG:5174(TM) 형식의 X/Y만 있는 행은 `proj4`로 WGS84로 변환해 거리 계산에 사용합니다. 둘 다 없으면 후보에서 제외하거나, 주소에서 추출한 자치구가 코스 행사 자치구와 같을 때만 보조 후보로 포함합니다.
+- **실패 시**: 프론트는 목업 식당 데이터로 폴백합니다.
+
 ## 프론트 연결
 
 프론트는 `VITE_BACKEND_BASE_URL`을 통해 백엔드 주소를 알며, 설정이 없으면 기본적으로 상대경로(`/api/events`)를 호출하도록 구성할 수 있습니다.

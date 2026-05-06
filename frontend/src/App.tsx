@@ -6,6 +6,7 @@ import { SearchPage } from './pages/SearchPage';
 import { LoadingPage } from './pages/LoadingPage';
 import { ResultPage } from './pages/ResultPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
+import { SharedCoursePage } from './pages/SharedCoursePage';
 import { MyCoursesPage } from './pages/MyCoursesPage';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/loading" element={<LoadingPage />} />
             <Route path="/results" element={<ResultPage />} />
             <Route path="/course/:courseId" element={<CourseDetailPage />} />
+            <Route path="/shared-course" element={<SharedCoursePage />} />
             <Route path="/my-courses" element={<MyCoursesPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

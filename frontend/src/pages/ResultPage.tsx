@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { formatResultsSubtitle, uiLabels } from '../i18n/translations';
 import { useTripPlanner } from '../context/TripPlannerContext';
 import { localizeDistrictName } from '../utils/localizeEvent';
+import { generateCourseSummary } from '../utils/courseSummary';
 import { EventImage } from '../components/EventImage';
 
 export function ResultPage() {
@@ -70,7 +71,13 @@ export function ResultPage() {
                   {L.curatedRoute}
                 </span>
                 <h2 className="mt-1 text-lg font-bold text-seoul-navy">{course.title}</h2>
-                <p className="mt-1 text-sm text-slate-700">{course.tagline}</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {generateCourseSummary(
+                    lang,
+                    course.items.map((it) => it.event),
+                    prefs.interests,
+                  )}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3 px-4 py-4 text-xs">
                 <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">

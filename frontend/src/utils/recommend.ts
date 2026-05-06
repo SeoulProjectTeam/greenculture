@@ -331,17 +331,21 @@ function hasLatLon(e: CultureEvent): boolean {
   );
 }
 
-/** 연속 행사 간 허용 직선거리(km) — 코스 길이별 */
+/**
+ * 연속 행사 간 허용 직선거리(km) — 코스 길이별.
+ * 실제 이동은 도로·대중교통으로 더 길어지므로, 직선 기준을 빡세게 두어
+ * 스팟 수만큼 구간이 길어져 하루가 이동만 되는 느낌을 줄입니다.
+ */
 export function maxStraightLineSegmentKm(travelDuration: TravelDurationId): number {
   switch (travelDuration) {
     case 'short':
-      return 2;
+      return 1.4;
     case 'half-day':
-      return 4;
+      return 2.4;
     case 'full-day':
-      return 7;
+      return 3.6;
     default:
-      return 4;
+      return 2.4;
   }
 }
 
@@ -396,9 +400,115 @@ function canAppendByStraightLine(last: ScoredEvent, cand: ScoredEvent, maxKm: nu
   return km <= maxKm;
 }
 
+/** 코스 최소 목표 행사 수(거리·구역 조건을 단계적으로 완화해 우선 충족) */
+export const MIN_COURSE_EVENTS_TARGET = 2;
+
+type SpatialDistrictMode = 'same' | 'adjacent' | 'free';
+
+function findSeedForSpatialMode(rankedSorted: ScoredEvent[], prefs: UserPreferences, mode: SpatialDistrictMode): ScoredEvent | null {
+  const ud = prefs.district.trim();
+  if (rankedSorted.length === 0) return null;
+
+  if (mode === 'same') {
+    if (ud) return rankedSorted.find((r) => r.event.district === ud) ?? null;
+    const first = rankedSorted[0]!;
+    return rankedSorted.find((r) => r.event.district === first.event.district) ?? first;
+  }
+
+  if (mode === 'adjacent') {
+    if (ud) return rankedSorted.find((r) => districtTier(r.event.district, ud) <= 1) ?? null;
+    return rankedSorted[0]!;
+  }
+
+  return rankedSorted[0]!;
+}
+
+function districtAllowsAppend(
+  cand: ScoredEvent,
+  selected: ScoredEvent[],
+  mode: SpatialDistrictMode,
+  prefs: UserPreferences,
+): boolean {
+  const ud = prefs.district.trim();
+  if (mode === 'same') {
+    const anchor = ud || selected[0]!.event.district;
+    return cand.event.district === anchor;
+  }
+  if (mode === 'adjacent') {
+    if (ud) return districtTier(cand.event.district, ud) <= 1;
+    return fitsDistrictCluster(selected, cand);
+  }
+  return true;
+}
+
+function compareEligibleCandidates(
+  last: ScoredEvent,
+  a: ScoredEvent,
+  b: ScoredEvent,
+  mode: SpatialDistrictMode,
+  prefs: UserPreferences,
+): number {
+  if (mode === 'free') {
+    const ia = getInterestMatchScore(a.event, prefs.interests);
+    const ib = getInterestMatchScore(b.event, prefs.interests);
+    if (ia !== ib) return ib - ia;
+    const da = pairStraightLineKm(last.event, a.event);
+    const db = pairStraightLineKm(last.event, b.event);
+    if (da !== null && db !== null && Math.abs(da - db) > 1e-6) return da - db;
+    if (da !== null && db === null) return -1;
+    if (da === null && db !== null) return 1;
+    return b.recommendationScore - a.recommendationScore;
+  }
+
+  const sameA = a.event.district === last.event.district ? 1 : 0;
+  const sameB = b.event.district === last.event.district ? 1 : 0;
+  if (sameA !== sameB) return sameB - sameA;
+
+  const da = pairStraightLineKm(last.event, a.event);
+  const db = pairStraightLineKm(last.event, b.event);
+  if (da !== null && db !== null && Math.abs(da - db) > 1e-6) return da - db;
+  if (da !== null && db === null) return -1;
+  if (da === null && db !== null) return 1;
+
+  return b.recommendationScore - a.recommendationScore;
+}
+
 /**
- * 같은 자치구·인접 구역을 우선 클러스터링하고, 위경도가 모두 있을 때 연속 구간 직선거리가
- * `maxStraightLineSegmentKm` 을 넘는 행사는 코스에 넣지 않습니다.
+ * 한 단계(거리 상한·구역 모드)에서 탐욕적으로 코스 구성
+ */
+function greedySpatialPick(
+  rankedSorted: ScoredEvent[],
+  prefs: UserPreferences,
+  maxSpots: number,
+  maxKm: number,
+  districtMode: SpatialDistrictMode,
+): ScoredEvent[] {
+  const seed = findSeedForSpatialMode(rankedSorted, prefs, districtMode);
+  if (!seed) return [];
+
+  const selected: ScoredEvent[] = [seed];
+  let pool = rankedSorted.filter((r) => r.event.id !== seed.event.id);
+
+  while (selected.length < maxSpots && pool.length > 0) {
+    const last = selected[selected.length - 1]!;
+    const eligible = pool.filter(
+      (c) => districtAllowsAppend(c, selected, districtMode, prefs) && canAppendByStraightLine(last, c, maxKm),
+    );
+    if (eligible.length === 0) break;
+
+    eligible.sort((a, b) => compareEligibleCandidates(last, a, b, districtMode, prefs));
+
+    const next = eligible[0]!;
+    selected.push(next);
+    pool = pool.filter((r) => r.event.id !== next.event.id);
+  }
+
+  return selected.slice(0, maxSpots);
+}
+
+/**
+ * 1) 같은 자치구 + 엄격 거리 → 2) 같은 자치구 + 완화 거리 → 3) 인접 자치구 → 4) 관심사·거리 보충.
+ * 그래도 2개 미만이면 최선의 1개 코스만 허용합니다.
  */
 export function pickCourseEventsSpatial(
   rankedSorted: ScoredEvent[],
@@ -407,36 +517,26 @@ export function pickCourseEventsSpatial(
 ): ScoredEvent[] {
   if (rankedSorted.length === 0) return [];
 
-  const maxKm = maxStraightLineSegmentKm(prefs.travelDuration);
-  const seed = rankedSorted[0]!;
-  const selected: ScoredEvent[] = [seed];
-  let pool = rankedSorted.filter((r) => r.event.id !== seed.event.id);
+  const baseKm = maxStraightLineSegmentKm(prefs.travelDuration);
+  /** 완화 단계도 상한을 낮게 두어 마지막 단계에서 과도한 장거리 연결을 피함 */
+  const relaxedKm = Math.min(baseKm * 1.55, baseKm + 4);
+  const wideKm = Math.min(relaxedKm * 1.35, baseKm + 8);
 
-  while (selected.length < maxSpots && pool.length > 0) {
-    const last = selected[selected.length - 1]!;
-    const eligible = pool.filter(
-      (c) => fitsDistrictCluster(selected, c) && canAppendByStraightLine(last, c, maxKm),
-    );
-    if (eligible.length === 0) break;
+  const stages: Array<{ maxKm: number; mode: SpatialDistrictMode }> = [
+    { maxKm: baseKm, mode: 'same' },
+    { maxKm: relaxedKm, mode: 'same' },
+    { maxKm: relaxedKm, mode: 'adjacent' },
+    { maxKm: wideKm, mode: 'free' },
+  ];
 
-    eligible.sort((a, b) => {
-      const sameA = a.event.district === last.event.district ? 1 : 0;
-      const sameB = b.event.district === last.event.district ? 1 : 0;
-      if (sameA !== sameB) return sameB - sameA;
+  let best: ScoredEvent[] = [];
 
-      const da = pairStraightLineKm(last.event, a.event);
-      const db = pairStraightLineKm(last.event, b.event);
-      if (da !== null && db !== null && Math.abs(da - db) > 1e-6) return da - db;
-      if (da !== null && db === null) return -1;
-      if (da === null && db !== null) return 1;
-
-      return b.recommendationScore - a.recommendationScore;
-    });
-
-    const next = eligible[0]!;
-    selected.push(next);
-    pool = pool.filter((r) => r.event.id !== next.event.id);
+  for (const stage of stages) {
+    const picked = greedySpatialPick(rankedSorted, prefs, maxSpots, stage.maxKm, stage.mode);
+    if (picked.length >= MIN_COURSE_EVENTS_TARGET) return picked.slice(0, maxSpots);
+    if (picked.length > best.length) best = picked;
   }
 
-  return selected.slice(0, maxSpots);
+  if (best.length > 0) return best.slice(0, maxSpots);
+  return [rankedSorted[0]!];
 }

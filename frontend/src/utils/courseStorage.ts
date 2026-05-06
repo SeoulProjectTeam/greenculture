@@ -1,7 +1,7 @@
 /**
  * 비회원 코스 저장 — localStorage 단일 진입점 (향후 API/DB로 교체 시 이 파일만 갈아끼우면 됨).
  */
-import type { AppLanguage, CourseListItem } from '../types/culture';
+import type { AppLanguage, CourseListItem, TravelDurationId } from '../types/culture';
 
 const STORAGE_KEY = 'seoul-culture-saved-courses-v1';
 
@@ -13,6 +13,10 @@ export interface SavedCourseRecord {
   district: string;
   language: AppLanguage;
   course: CourseListItem;
+  /** 저장 시점 여행 길이 — 식사 후보 개수 등 재표시용 */
+  travelDuration?: TravelDurationId;
+  /** 저장 시점 식당 섹션 표시 설정 */
+  includeRestaurantSuggestions?: boolean;
 }
 
 function stripEventRaw(course: CourseListItem): CourseListItem {
@@ -68,7 +72,13 @@ export function isCourseSaved(courseId: string): boolean {
  */
 export function saveCourse(
   course: CourseListItem,
-  snapshot: { visitDate: string; district: string; language: AppLanguage },
+  snapshot: {
+    visitDate: string;
+    district: string;
+    language: AppLanguage;
+    travelDuration: TravelDurationId;
+    includeRestaurantSuggestions: boolean;
+  },
 ): boolean {
   const courseId = course.id;
   if (!courseId) return false;
@@ -81,6 +91,8 @@ export function saveCourse(
     visitDate: snapshot.visitDate,
     district: snapshot.district,
     language: snapshot.language,
+    travelDuration: snapshot.travelDuration,
+    includeRestaurantSuggestions: snapshot.includeRestaurantSuggestions,
     course: stripEventRaw(course),
   };
 

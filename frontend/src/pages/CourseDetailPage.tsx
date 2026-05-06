@@ -5,8 +5,15 @@ import type { AppLanguage, CultureEvent } from '../types/culture';
 import { useTripPlanner } from '../context/TripPlannerContext';
 import { getStraightLineKm } from '../services/routeService';
 import { localizeEvent, localizeRecommendationParagraph } from '../utils/localizeEvent';
+import type { SavedCourseRecord } from '../utils/courseStorage';
 import { getSavedCourses, isCourseSaved, saveCourse } from '../utils/courseStorage';
 import { EventImage } from '../components/EventImage';
+import { CourseNearbyDining } from '../components/CourseNearbyDining';
+import { KakaoCourseMap } from '../components/KakaoCourseMap';
+import { fetchNearbyRestaurants, type RestaurantCandidate } from '../services/restaurantService';
+import { generateCourseSummary } from '../utils/courseSummary';
+import { createShareUrl } from '../utils/shareCourse';
+import { generateCourseInsights } from '../utils/courseInsights';
 
 function StraightLineBetweenVenues({
   prev,
@@ -64,6 +71,7 @@ export function CourseDetailPage() {
         course: sessionHit,
         displayLang: prefs?.language ?? 'ko',
         fromSession: true as const,
+        savedRecord: null as SavedCourseRecord | null,
       };
     }
     const savedHit = getSavedCourses().find((r) => r.courseId === decodedId);
@@ -72,20 +80,30 @@ export function CourseDetailPage() {
         course: savedHit.course,
         displayLang: savedHit.language,
         fromSession: false as const,
+        savedRecord: savedHit,
       };
     }
     return {
       course: null as null,
       displayLang: prefs?.language ?? 'ko',
       fromSession: false as const,
+      savedRecord: null as SavedCourseRecord | null,
     };
   }, [courses, decodedId, prefs?.language]);
+
+  const showDiningSection =
+    (resolved.fromSession && prefs?.includeRestaurantSuggestions === true) ||
+    (!resolved.fromSession && resolved.savedRecord?.includeRestaurantSuggestions === true);
+
+  const travelDurationForDining =
+    (resolved.fromSession ? prefs?.travelDuration : resolved.savedRecord?.travelDuration) ?? 'half-day';
 
   useEffect(() => {
     if (!resolved.course && !prefs) navigate('/search', { replace: true });
   }, [resolved.course, prefs, navigate]);
 
   const [saved, setSaved] = useState(() => isCourseSaved(decodedId));
+  const [shareNotice, setShareNotice] = useState('');
 
   useEffect(() => {
     setSaved(isCourseSaved(decodedId));
@@ -100,6 +118,96 @@ export function CourseDetailPage() {
   const lang = resolved.displayLang;
   const L = uiLabels(lang);
   const course = resolved.course;
+
+  const courseSummaryText = useMemo(() => {
+    if (!course) return '';
+    const events = course.items.map((it) => it.event);
+    const interests =
+      resolved.fromSession && prefs?.interests?.length ? prefs.interests : undefined;
+    return generateCourseSummary(lang, events, interests);
+  }, [course, lang, prefs?.interests, resolved.fromSession]);
+
+  const courseInsights = useMemo(() => {
+    if (!course) return null;
+    const snapshot = resolved.fromSession
+      ? {
+          visitDate: prefs?.visitDate ?? '',
+          travelDuration: prefs?.travelDuration ?? 'half-day',
+          interests: prefs?.interests ?? [],
+          includeRestaurantSuggestions: prefs?.includeRestaurantSuggestions ?? false,
+        }
+      : {
+          visitDate: resolved.savedRecord?.visitDate ?? '',
+          travelDuration: resolved.savedRecord?.travelDuration ?? 'half-day',
+          interests: [],
+          includeRestaurantSuggestions: resolved.savedRecord?.includeRestaurantSuggestions ?? false,
+        };
+    return generateCourseInsights(course, snapshot, { lang });
+  }, [
+    course,
+    lang,
+    prefs?.includeRestaurantSuggestions,
+    prefs?.interests,
+    prefs?.travelDuration,
+    prefs?.visitDate,
+    resolved.fromSession,
+    resolved.savedRecord?.includeRestaurantSuggestions,
+    resolved.savedRecord?.travelDuration,
+    resolved.savedRecord?.visitDate,
+  ]);
+
+  const diningFetchKey = useMemo(() => {
+    if (!course) return '';
+    return `${travelDurationForDining}|${course.items.map((it) => it.event.id).join(',')}`;
+  }, [course, travelDurationForDining]);
+
+  const [diningRows, setDiningRows] = useState<RestaurantCandidate[]>([]);
+  const [diningLoading, setDiningLoading] = useState(false);
+
+  useEffect(() => {
+    if (!showDiningSection || !course) {
+      setDiningRows([]);
+      setDiningLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    setDiningLoading(true);
+
+    fetchNearbyRestaurants(course.items.map((it) => it.event), {
+      travelDuration: travelDurationForDining,
+      signal: ac.signal,
+    })
+      .then((rows) => {
+        if (!ac.signal.aborted) setDiningRows(rows);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setDiningRows([]);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setDiningLoading(false);
+      });
+
+    return () => ac.abort();
+  }, [showDiningSection, course, diningFetchKey, travelDurationForDining]);
+
+  const diningMapMarkers = useMemo(() => {
+    if (!showDiningSection || diningLoading) return undefined;
+    const markers = diningRows
+      .filter(
+        (r) =>
+          typeof r.latitude === 'number' &&
+          typeof r.longitude === 'number' &&
+          Number.isFinite(r.latitude) &&
+          Number.isFinite(r.longitude),
+      )
+      .map((r) => ({
+        lat: r.latitude as number,
+        lng: r.longitude as number,
+        title: r.name,
+      }));
+    return markers.length > 0 ? markers : undefined;
+  }, [showDiningSection, diningLoading, diningRows]);
 
   if (!course) {
     return (
@@ -121,8 +229,48 @@ export function CourseDetailPage() {
       visitDate: prefs.visitDate,
       district: prefs.district,
       language: prefs.language,
+      travelDuration: prefs.travelDuration,
+      includeRestaurantSuggestions: prefs.includeRestaurantSuggestions,
     });
     if (ok) setSaved(true);
+  };
+
+  const handleShare = async () => {
+    if (!course) return;
+    const snapshot = resolved.fromSession
+      ? {
+          visitDate: prefs?.visitDate ?? '',
+          district: prefs?.district ?? '',
+          travelDuration: prefs?.travelDuration ?? 'half-day',
+          interests: prefs?.interests ?? [],
+          includeRestaurantSuggestions: prefs?.includeRestaurantSuggestions ?? false,
+        }
+      : {
+          visitDate: resolved.savedRecord?.visitDate ?? '',
+          district: resolved.savedRecord?.district ?? '',
+          travelDuration: resolved.savedRecord?.travelDuration ?? 'half-day',
+          interests: [],
+          includeRestaurantSuggestions: resolved.savedRecord?.includeRestaurantSuggestions ?? false,
+        };
+
+    const url = createShareUrl(course, snapshot, { summary: courseSummaryText });
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: course.title, url });
+        return;
+      }
+    } catch {
+      // 사용자가 공유 UI를 취소하면 여기로 올 수 있음 → 클립보드 폴백으로 진행
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareNotice(L.shareLinkCopied);
+      window.setTimeout(() => setShareNotice(''), 2500);
+    } catch {
+      setShareNotice(url);
+    }
   };
 
   const backTo = fromSavedNav || !resolved.fromSession ? '/my-courses' : '/results';
@@ -133,8 +281,52 @@ export function CourseDetailPage() {
       <div className="rounded-2xl bg-gradient-to-br from-seoul-sky to-white p-4 ring-1 ring-seoul-blue/15">
         <p className="text-[10px] font-bold uppercase tracking-wider text-seoul-blue">{L.timeline}</p>
         <h1 className="mt-1 text-xl font-black text-seoul-navy">{course.title}</h1>
-        <p className="mt-2 text-sm text-slate-700">{course.tagline}</p>
+        <p className="mt-2 text-sm text-slate-700">{courseSummaryText}</p>
+
+        {courseInsights ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {courseInsights.stats.coordEventCount >= 2 ? (
+              <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-seoul-navy ring-1 ring-seoul-blue/15">
+                {L.badgeLocationBased}
+              </span>
+            ) : null}
+
+            {courseInsights.stats.transitSegmentCount > 0 ? (
+              <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-seoul-navy ring-1 ring-seoul-blue/15">
+                {L.badgeTransitLinked}
+              </span>
+            ) : null}
+
+            {(resolved.fromSession ? (prefs?.interests?.length ?? 0) : 0) > 0 ? (
+              <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-seoul-navy ring-1 ring-seoul-blue/15">
+                {L.badgeInterestBased}
+              </span>
+            ) : null}
+
+            <span className="ml-auto text-[11px] font-semibold text-slate-700">
+              {L.visitDifficulty}:&nbsp;
+              <span className="font-black text-seoul-navy">
+                {courseInsights.difficulty === 'easy'
+                  ? L.difficultyEasy
+                  : courseInsights.difficulty === 'moderate'
+                    ? L.difficultyModerate
+                    : L.difficultyHigh}
+              </span>
+            </span>
+          </div>
+        ) : null}
       </div>
+
+      <KakaoCourseMap
+        lang={lang}
+        events={course.items.map((it) => it.event)}
+        heightPx={290}
+        restaurantMarkers={diningMapMarkers}
+      />
+
+      {showDiningSection ? (
+        <CourseNearbyDining lang={lang} loading={diningLoading} restaurants={diningRows} />
+      ) : null}
 
       <div className="relative mt-8 space-y-0 pl-3">
         <div className="absolute bottom-2 left-[11px] top-2 w-0.5 bg-seoul-sky" aria-hidden />
@@ -184,7 +376,7 @@ export function CourseDetailPage() {
                 </p>
                 <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-950 ring-1 ring-amber-100">
                   <span className="font-bold">{L.whyRecommended} · </span>
-                  {why}
+                  <span className="whitespace-pre-line">{why}</span>
                 </div>
                 {(it.event.homepageUrl ?? '').trim() ? (
                   <a
@@ -203,6 +395,20 @@ export function CourseDetailPage() {
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex h-12 items-center justify-center rounded-2xl border-2 border-slate-200 bg-white text-sm font-bold text-seoul-navy"
+        >
+          {L.share}
+        </button>
+
+        {shareNotice ? (
+          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+            {shareNotice}
+          </p>
+        ) : null}
+
         <Link
           to={backTo}
           className="flex h-12 items-center justify-center rounded-2xl border-2 border-seoul-navy text-sm font-bold text-seoul-navy"
@@ -227,13 +433,12 @@ export function CourseDetailPage() {
         ) : null}
 
         {prefs ? (
-          <button
-            type="button"
-            onClick={() => navigate('/loading')}
-            className="flex h-12 items-center justify-center rounded-2xl bg-gradient-to-r from-seoul-blue to-seoul-mint text-sm font-bold text-white shadow-md"
+          <Link
+            to="/search"
+            className="flex h-12 items-center justify-center rounded-2xl border-2 border-slate-200 bg-white text-sm font-bold text-seoul-navy"
           >
-            {L.regenerate}
-          </button>
+            {L.adjustPlan}
+          </Link>
         ) : null}
       </div>
     </div>

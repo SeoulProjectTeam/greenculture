@@ -64,6 +64,8 @@ export interface UserPreferences extends SearchPreferencesExtension {
   travelDuration: TravelDurationId;
   interests: InterestId[];
   language: AppLanguage;
+  /** 코스 상세에서 「근처 식사 추천」 섹션 표시 여부 (타임라인에는 삽입하지 않음) */
+  includeRestaurantSuggestions: boolean;
 }
 
 export interface ScoredEvent {
